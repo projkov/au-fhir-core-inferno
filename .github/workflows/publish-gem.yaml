@@ -24,4 +24,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gem push --key github --host https://rubygems.pkg.github.com/${{ github.repository_owner }} your_gem-*.gem
+          gem push --key github --host https://rubygems.pkg.github.com/${{ github.repository_owner }} au_core_test_kit-*.gem
