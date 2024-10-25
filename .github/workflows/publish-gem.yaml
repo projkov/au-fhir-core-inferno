@@ -20,8 +20,8 @@ jobs:
       - name: Build the gem
         run: |
           gem build au_core_test_kit.gemspec
-      - name: Publish the gem
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gem push --key github --host https://rubygems.pkg.github.com/${{ github.repository_owner }} au_core_test_kit-*.gem
+      - name: Release Gem to GitHub Packages
+        uses: jstastny/publish-gem-to-github@v2.4
+        with:
+         token: ${{ secrets.GITHUB_TOKEN }}
+         owner: ${{ github.repository_owner }}
