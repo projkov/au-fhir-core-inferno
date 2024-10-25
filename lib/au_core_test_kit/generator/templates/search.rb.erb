@@ -1,12 +1,13 @@
 require_relative '../../../search_test'
 require_relative '../../../generator/group_metadata'
+require_relative '../../../helpers'
 
 module AUCoreTestKit
   module <%= module_name %>
     class <%= class_name %> < Inferno::Test
       include AUCoreTestKit::SearchTest
 
-      title 'Server returns valid results for <%= resource_type %> search by <%= search_param_name_string %>'
+      title '(<%= conformance_expectation %>) Server returns valid results for <%= resource_type %> search by <%= search_param_name_string %>'
       description %(
 <%= description %>
       )
@@ -17,7 +18,7 @@ module AUCoreTestKit
       input :patient_ids,
         title: 'Patient IDs',
         description: 'Comma separated list of patient IDs that in sum contain all MUST SUPPORT elements',
-        default: 'bennelong-anne, smith-emma, baby-smith-john, dan-harry, italia-sofia, wang-li'
+        default: '<%= Helpers.default_patient_ids_string %>'
   <% end %><% if resource_type == 'Device' %>
       input :implantable_device_codes,
         title: 'Implantable Device Type Code',
@@ -40,7 +41,7 @@ module AUCoreTestKit
       end
 
       run do
-        run_search_test
+        <%= search_method %>
       end
     end
   end

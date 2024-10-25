@@ -87,6 +87,10 @@ module AUCoreTestKit
           end
       end
 
+      def first_search_for_patient_by_patient_id
+        first_search? && resource_type == 'Patient' && search_metadata[:names].first == '_id'
+      end
+
       def first_search?
         group_metadata.searches.first == search_metadata
       end
@@ -134,7 +138,13 @@ module AUCoreTestKit
       end
 
       def optional?
-        conformance_expectation != 'SHALL' || !search_metadata[:must_support_or_mandatory]
+        # NOTE: Original behavior changed because we need a clear
+        # expectation of the search parameters in tests. If in the
+        # CapabilityStatement resource we have SHALL it should be
+        # required in the tests.
+        # https://github.com/hl7au/au-fhir-core-inferno/issues/47
+        # conformance_expectation != 'SHALL' || !search_metadata[:must_support_or_mandatory]
+        conformance_expectation != 'SHALL'
       end
 
       def search_definition(name)
@@ -168,8 +178,41 @@ module AUCoreTestKit
           end
       end
 
+      def optional_multiple_or_search_params
+        @optional_multiple_or_search_params ||=
+          search_param_names.select do |name|
+            search_definition(name)[:multiple_or] == 'SHOULD'
+          end
+      end
+
       def required_multiple_or_search_params_string
         array_of_strings(required_multiple_or_search_params)
+      end
+
+      def optional_multiple_or_search_params_string
+        array_of_strings(optional_multiple_or_search_params)
+      end
+
+      def optional_multiple_and_search_params
+        @optional_multiple_and_search_params ||=
+          search_param_names.select do |name|
+            search_definition(name)[:multiple_and] == 'SHOULD'
+          end
+      end
+
+      def required_multiple_and_search_params
+        @required_multiple_and_search_params ||=
+          search_param_names.select do |name|
+            search_definition(name)[:multiple_and] == 'SHALL'
+          end
+      end
+
+      def optional_multiple_and_search_params_string
+        array_of_strings(optional_multiple_and_search_params)
+      end
+
+      def required_multiple_and_search_params_string
+        array_of_strings(required_multiple_and_search_params)
       end
 
       def required_comparators_string
@@ -182,6 +225,8 @@ module AUCoreTestKit
       end
 
       def test_reference_variants?
+        return true if resource_type == 'PractitionerRole' && search_param_names.include?('practitioner')
+
         first_search? && search_param_names.include?('patient')
       end
 
@@ -193,6 +238,44 @@ module AUCoreTestKit
         first_search?
       end
 
+      def includes
+        # The medication SearchParameter does not exist for the MedicationStatement
+        # and MedicationRequest resources in the current version of the IG,
+        # we shall keep special cases to provide functionality for the "_include" tests.
+        # https://jira.csiro.au/browse/ST-400
+        special_cases = {
+          'MedicationRequest:medication' => { 'parameter' => 'MedicationRequest:medication', 'target_resource' => 'Medication', 'paths' => ['medicationReference'] },
+          'MedicationStatement:medication' => { 'parameter' => 'MedicationStatement:medication', 'target_resource' => 'Medication', 'paths' => ['medicationReference'] }
+        }
+        include_params_list = group_metadata.include_params
+        search_definitions = group_metadata.search_definitions
+
+        include_params_list.map do |include_param|
+          if special_cases.key?(include_param)
+            puts "Special case for include_param: #{include_param}"
+
+            return [special_cases[include_param]]
+          end
+
+          target_resource = ''
+          paths = ''
+          search_definitions.each_key do |search_def_key|
+            current_search_def_path = search_definitions[search_def_key]
+            next unless current_search_def_path[:full_paths].first.split('.') == include_param.split(':')
+
+            target_resource = current_search_def_path[:target_resource]
+            paths = current_search_def_path[:paths]
+            break
+          end
+
+          {
+            'parameter' => include_param,
+            'target_resource' => target_resource,
+            'paths' => paths
+          }
+        end
+      end
+
       def search_properties
         {}.tap do |properties|
           properties[:first_search] = 'true' if first_search?
@@ -202,14 +285,12 @@ module AUCoreTestKit
           properties[:saves_delayed_references] = 'true' if saves_delayed_references?
           properties[:possible_status_search] = 'true' if possible_status_search?
           properties[:test_medication_inclusion] = 'true' if test_medication_inclusion?
+          properties[:includes] = includes if group_metadata.include_params.present?
           properties[:token_search_params] = token_search_params_string if token_search_params.present?
           properties[:test_reference_variants] = 'true' if test_reference_variants?
           properties[:params_with_comparators] = required_comparators_string if required_comparators.present?
-          if required_multiple_or_search_params.present?
-            properties[:multiple_or_search_params] =
-              required_multiple_or_search_params_string
-          end
           properties[:test_post_search] = 'true' if first_search?
+          properties[:first_search_for_patient_by_patient_id] = 'true' if first_search_for_patient_by_patient_id
         end
       end
 
@@ -241,8 +322,8 @@ module AUCoreTestKit
 
         <<~REFERENCE_SEARCH_DESCRIPTION
           This test verifies that the server supports searching by reference using
-          the form `patient=[id]` as well as `patient=Patient/[id]`. The two
-          different forms are expected to return the same number of results. US
+          the form `#{search_param_names.first}=[id]` as well as `#{search_param_names.first}=#{search_param_names.first.capitalize}/[id]`. The two
+          different forms are expected to return the same number of results. AU
           Core requires that both forms are supported by AU Core responders.
         REFERENCE_SEARCH_DESCRIPTION
       end
@@ -291,6 +372,14 @@ module AUCoreTestKit
 
           [AU Core Server CapabilityStatement](http://hl7.org.au/fhir/core/#{url_version}/CapabilityStatement-au-core-server.html)
         DESCRIPTION
+      end
+
+      def search_method
+        if search_metadata[:names].first == 'identifier' && group_metadata.name == 'au_core_patient'
+          'run_search_test_with_system'
+        else
+          'run_search_test'
+        end
       end
     end
   end

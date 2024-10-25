@@ -1,20 +1,22 @@
 # frozen_string_literal: true
 
 require_relative 'fhir_resource_navigation'
+require_relative 'assert_helpers'
 
 module AUCoreTestKit
   module ReferenceResolutionTest
     extend Forwardable
     include FHIRResourceNavigation
+    include AssertHelpers
 
     def_delegators 'self.class', :metadata
 
     def perform_reference_resolution_test(resources)
-      skip_if resources.blank?, no_resources_skip_message
+      conditional_skip_with_msg resources.blank?, no_resources_skip_message
 
       pass if unresolved_references(resources).empty?
 
-      skip "Could not resolve and validate any Must Support references for #{unresolved_references_strings.join(', ')}"
+      skip_with_msg "Could not resolve and validate any Must Support references for #{unresolved_references_strings.join(', ')}"
     end
 
     def unresolved_references_strings
@@ -168,7 +170,7 @@ module AUCoreTestKit
       return true if target_profile.blank?
 
       # NOTE: Special case: terminology server don't have a specimen v0.3.0
-      target_profile = "#{target_profile}|4.2.0-preview" if metadata.profile_version == '0.3.0-ballot' && target_profile == 'http://hl7.org.au/fhir/StructureDefinition/au-specimen'
+      target_profile = "#{target_profile}|4.2.2-ballot" if target_profile == 'http://hl7.org.au/fhir/StructureDefinition/au-specimen'
 
       # Only need to know if the resource is valid.
       # Calling resource_is_valid? causes validation errors to be logged.
@@ -176,7 +178,8 @@ module AUCoreTestKit
 
       target_profile_with_version = target_profile.include?('|') ? target_profile : "#{target_profile}|#{metadata.profile_version}"
 
-      outcome = FHIR::OperationOutcome.new(JSON.parse(validator.validate(resource, target_profile_with_version)))
+      validator_response = validator.validate(resource, target_profile_with_version)
+      outcome = validator.operation_outcome_from_hl7_wrapped_response(validator_response)
 
       message_hashes = outcome.issue&.map { |issue| validator.message_hash_from_issue(issue, resource) } || []
 

@@ -9,11 +9,11 @@ provider "helm" {
   kubernetes {
     host                   = data.aws_eks_cluster.cluster.endpoint
     cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
-    token                  = data.aws_eks_cluster_auth.default.token
+    token                  = data.aws_eks_cluster_auth.cluster_auth.token
   }
 }
 provider "aws" {
-  profile = "FHIR-Admin"
+  # profile = "FHIR-Admin"
 }
 
 
@@ -30,6 +30,6 @@ terraform {
     bucket = "examplebucket-fhir-aws"
     region = "ap-southeast-2"
     key    = "infra/inferno/dev.tfstate"
-    profile = "FHIR-Admin"
+    # profile = "FHIR-Admin"
   }
 }

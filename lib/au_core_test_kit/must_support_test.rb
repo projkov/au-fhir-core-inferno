@@ -2,11 +2,13 @@
 
 require_relative 'fhir_resource_navigation'
 require_relative 'helpers'
+require_relative 'assert_helpers'
 
 module AUCoreTestKit
   module MustSupportTest
     extend Forwardable
     include FHIRResourceNavigation
+    include AssertHelpers
 
     def_delegators 'self.class', :metadata
 
@@ -15,7 +17,7 @@ module AUCoreTestKit
     end
 
     def perform_must_support_test(resources)
-      skip_if resources.blank?, "No #{resource_type} resources were found"
+      conditional_skip_with_msg resources.blank?, "No #{resource_type} resources were found"
 
       missing_elements(resources)
       missing_slices(resources)
@@ -24,8 +26,9 @@ module AUCoreTestKit
       handle_must_support_choices if metadata.must_supports[:choices].present?
 
       pass if (missing_elements + missing_slices + missing_extensions).empty?
-      skip "Could not find #{missing_must_support_strings.join(', ')} in the #{resources.length} " \
-           "provided #{resource_type} resource(s)"
+      skip_with_msg "Could not find #{missing_must_support_strings.join(', ')} element(s) in the #{resources.length} " \
+           "provided #{resource_type} resource(s). To prevent this issue, please add the missing must support "\
+           "elements to at least one #{resource_type} resource on the server."
     end
 
     def handle_must_support_choices
@@ -59,9 +62,11 @@ module AUCoreTestKit
     end
 
     def missing_must_support_strings
-      missing_elements.map { |element_definition| missing_element_string(element_definition) } +
+      result = missing_elements.map { |element_definition| missing_element_string(element_definition) } +
         missing_slices.map { |slice_definition| slice_definition[:slice_id] } +
         missing_extensions.map { |extension_definition| extension_definition[:id] }
+
+      result.map { |missing_element| "'#{missing_element}'" }
     end
 
     def missing_element_string(element_definition)

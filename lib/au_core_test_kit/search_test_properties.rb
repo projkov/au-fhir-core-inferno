@@ -14,7 +14,15 @@ module AUCoreTestKit
       test_reference_variants
       params_with_comparators
       multiple_or_search_params
+      optional_multiple_or_search_params
+      multiple_and_search_params
+      optional_multiple_and_search_params
       test_post_search
+      attr_paths
+      target_identifier
+      first_search_for_patient_by_patient_id
+      includes
+      use_any_data_for_search
     ].freeze
 
     ATTRIBUTES.each { |name| attr_reader name }

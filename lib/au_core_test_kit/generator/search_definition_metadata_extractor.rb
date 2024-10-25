@@ -24,7 +24,9 @@ module AUCoreTestKit
             type:,
             contains_multiple: contains_multiple?,
             multiple_or: multiple_or_expectation,
-            chain:
+            multiple_and: multiple_and_expectation,
+            chain:,
+            target_resource:
           }.compact
       end
 
@@ -40,6 +42,10 @@ module AUCoreTestKit
         param.source_hash
       end
 
+      def target_resource
+        param.target.first
+      end
+
       def full_paths
         @full_paths ||=
           begin
@@ -50,6 +56,13 @@ module AUCoreTestKit
                 "#{type_name[0].upcase}#{type_name[1..]}"
               end
             end.filter { |path| path.split('.').first == resource }
+
+            full_paths.map do |path|
+              path.scan(/[. ]as[( ]([^)]*)[)]?/).flatten.map do |as_type|
+                path.gsub!(/[. ]as[( ](#{as_type}[^)]*)[)]?/, as_type.upcase_first) if as_type.present?
+              end
+            end
+
             # path = param.expression.gsub(/.where\(resolve\((.*)/, '').gsub(/url = '/, 'url=\'')
             # path = path[1..-2] if path.start_with?('(') && path.end_with?(')')
             # path.scan(/[. ]as[( ]([^)]*)[)]?/).flatten.map do |as_type|
@@ -120,9 +133,20 @@ module AUCoreTestKit
       end
 
       def comparators
+        # NOTE: Hard-coded values are used because the comparator expectation
+        # does not exist in the machine-readable files, but it does exist in the narrative.
+        # NOTE: https://github.com/hl7au/au-fhir-core-inferno/issues/48
+        special_cases_resources = %w[Observation Condition Encounter Immunization MedicationRequest]
+        special_cases_comparators = %w[gt lt ge le]
+        special_cases_param_ids = %w[clinical-date Condition-onset-date clinical-date MedicationRequest-authoredon]
+
         {}.tap do |comparators|
           param.comparator&.each_with_index do |comparator, index|
-            comparators[comparator.to_sym] = comparator_expectation(comparator_expectation_extensions[index])
+            comparators[comparator.to_sym] = if (special_cases_resources.include? group_metadata[:resource]) && (special_cases_comparators.include? comparator) && (special_cases_param_ids.include? param_hash['id'])
+                                               'SHALL'
+                                             else
+                                               comparator_expectation(comparator_expectation_extensions[index])
+                                             end
           end
         end
       end
@@ -164,18 +188,77 @@ module AUCoreTestKit
       def chain
         return nil if param.chain.blank?
 
+        target = param.target.first
         param.chain
              .zip(chain_expectations)
-             .map { |chain, expectation| { chain:, expectation: } }
+             .map { |chain, expectation| { chain:, expectation:, target: } }
       end
 
       def multiple_or_expectation
+        # NOTE: Hard-coded values are used because the multipleOr attributes
+        # do not exist in the machine-readable files, but they do exist in the narrative.
+        # NOTE: https://github.com/hl7au/au-fhir-core-inferno/issues/61
+        # NOTE: https://github.com/hl7au/au-fhir-core-inferno/issues/63
+        case group_metadata[:resource]
+        when 'Procedure'
+          return 'SHALL' if param_hash['id'] == 'Procedure-status'
+          return 'SHOULD' if param_hash['id'] == 'clinical-code'
+        when 'Observation'
+          return 'SHALL' if param_hash['id'] == 'Observation-status'
+          return 'SHOULD' if param_hash['id'] == 'clinical-code'
+        when 'MedicationRequest'
+          return 'SHALL' if param_hash['id'] == 'medications-status'
+          return 'SHOULD' if param_hash['id'] == 'MedicationRequest-intent'
+        when 'Immunization'
+          return 'SHOULD' if param_hash['id'] == 'Immunization-vaccine-code'
+        end
+
         return unless param_hash['_multipleOr']
 
         param_hash['_multipleOr']['extension'].first['valueCode']
       end
 
+      def multiple_and_expectation
+        # NOTE: Hard-coded values are used because the multipleAnd attributes
+        # do not exist in the machine-readable files, but they do exist in the narrative.
+        # NOTE: https://github.com/hl7au/au-fhir-core-inferno/issues/62
+        case group_metadata[:resource]
+        when 'Observation'
+          return 'SHOULD' if param_hash['id'] == 'clinical-date'
+        when 'Condition'
+          return 'SHOULD' if param_hash['id'] == 'Condition-onset-date'
+        when 'Encounter'
+          return 'SHOULD' if param_hash['id'] == 'clinical-date'
+        when 'Immunization'
+          return 'SHOULD' if param_hash['id'] == 'clinical-date'
+        when 'MedicationRequest'
+          return 'SHOULD' if param_hash['id'] == 'MedicationRequest-authoredon'
+        end
+        return unless param_hash['_multipleAnd']
+
+        param_hash['_multipleAnd']['extension'].first['valueCode']
+      end
+
       def values
+        fixed_diagnostic_result_values = %w[251739003 24701-5]
+        fixed_date_value = %w[ge1950-01-01 le2050-01-01]
+        # NOTE: In the current step we don't need to check the correct content of the response.
+        # We should care about the correct structure of the request. In this current case we use dates just
+        # to check that server can make a response for the request.
+        case group_metadata[:resource]
+        when 'Observation'
+          return fixed_date_value if param_hash['id'] == 'clinical-date'
+          return fixed_diagnostic_result_values if param_hash['id'] =='clinical-code' && group_metadata[:profile_url] == 'http://hl7.org.au/fhir/core/StructureDefinition/au-core-diagnosticresult'
+        when 'Condition'
+          return fixed_date_value if param_hash['id'] == 'Condition-onset-date'
+        when 'Encounter'
+          return fixed_date_value if param_hash['id'] == 'clinical-date'
+        when 'Immunization'
+          return fixed_date_value if param_hash['id'] == 'clinical-date'
+        when 'MedicationRequest'
+          return fixed_date_value if param_hash['id'] == 'MedicationRequest-authoredon'
+        end
+
         values_from_fixed_codes = value_extractor.values_from_fixed_codes(profile_element, type).presence
         values_from_pattern_coding = value_extractor.values_from_pattern_coding(profile_element, type).presence
         merged_values = Array(values_from_fixed_codes) + Array(values_from_pattern_coding)

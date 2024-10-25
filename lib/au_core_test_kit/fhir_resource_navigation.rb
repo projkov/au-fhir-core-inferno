@@ -18,8 +18,34 @@ module AUCoreTestKit
       end.compact
     end
 
+    def is_extension?(str)
+      !!str.match(%r{extension\('https?://[^\s]+?\)\.value})
+    end
+
+    def get_extension_url(str)
+      match = str.match(/extension\('([^']+)'\)\.value/)
+      match ? match[1] : nil
+    end
+
+    def get_value_from_extension(element, extension_url)
+      extension_elements = element.extension.filter { |ext| ext.url == extension_url }
+      return nil unless extension_elements.length.positive?
+
+      extension_element = extension_elements.first
+      case extension_url
+      when 'http://hl7.org.au/fhir/StructureDefinition/indigenous-status'
+        extension_element.valueCoding
+      when 'http://hl7.org/fhir/StructureDefinition/individual-genderIdentity'
+        extension_element.extension.first.valueCodeableConcept
+      else
+        extension_element.valueCoding
+      end
+    end
+
     def find_a_value_at(element, path, include_dar: false, &block)
       return nil if element.nil?
+
+      return get_value_from_extension(element, get_extension_url(path)) if is_extension?(path)
 
       elements = Array.wrap(element)
       if path.empty?

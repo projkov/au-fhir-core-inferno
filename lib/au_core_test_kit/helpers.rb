@@ -1,6 +1,24 @@
 # frozen_string_literal: true
 
 module Helpers
+  DAR_CODE_SYSTEM_URL = 'http://terminology.hl7.org/CodeSystem/data-absent-reason'
+  DAR_EXTENSION_URL = 'http://hl7.org/fhir/StructureDefinition/data-absent-reason'
+
+  def self.multiple_test_description(multiple_type, conformance_expectation, search_param_name_string, resource_type, url_version)
+    multiple_type_str = multiple_type == 'OR' ? 'multipleOr' : 'multipleAnd' 
+    <<~DESCRIPTION.gsub(/\n{3,}/, "\n\n")
+    A server #{conformance_expectation} support searching by #{multiple_type_str}
+    #{search_param_name_string} on the #{resource_type} resource. This test
+    will pass if resources are returned and match the search criteria. If
+    none are returned, the test is skipped.
+
+    [AU Core Server CapabilityStatement](http://hl7.org.au/fhir/core/#{url_version}/CapabilityStatement-au-core-server.html)
+    DESCRIPTION
+  end
+  def self.get_http_header(header_name, header_value)
+    (header_name && header_value) ? {header_name => header_value} : {}
+  end
+
   def self.extract_extensions_from_resource(resource, extensions = [])
     resource_hash = convert_resource_to_hash(resource)
     process_resource_element(resource_hash, extensions)
@@ -17,16 +35,13 @@ module Helpers
       features supported by the API by using the [Capability
       Statement](https://www.hl7.org/fhir/capabilitystatement.html) resource.
       The features described in the Capability Statement must be consistent with
-      the required capabilities of a AU Core server. The Capability Statement
-      must also advertise the location of the required SMART on FHIR endpoints
-      that enable authenticated access to the FHIR server resources.
+      the required capabilities of a AU Core **Responder**.
 
       The Capability Statement resource allows clients to determine which
       resources are supported by a FHIR Server. Not all servers are expected to
       implement all possible queries and data elements described in the AU Core
-      API. For example, the AU Core Implementation Guide requires that the
-      Patient resource and only one additional resource profile from the AU Core
-      Profiles.
+      API. The **AU Core Responder Capability Statement** requires that
+      the Patient resource and **at least** one additional resource profile from the AU Core profiles.
 
       #{testing_methodology_title}
 
@@ -66,7 +81,7 @@ module Helpers
       specified in the AU Core #{group_version} Implementation Guide.
 
       #{testing_methodology_title}
-      #{search_description(required_searches, search_param_name_string, search_validation_resource_type, for_group_description)}
+      #{search_description(required_searches, search_param_name_string, search_validation_resource_type, for_group_description, resource_type)}
 
       #{must_support_title}
       Each profile contains elements marked as "must support". This test
@@ -92,8 +107,13 @@ module Helpers
     DESCRIPTION
   end
 
-  def self.search_description(required_searches, search_param_name_string, search_validation_resource_type, for_group_description)
+  def self.search_description(required_searches, search_param_name_string, search_validation_resource_type, for_group_description, resource_type)
     return '' if required_searches.blank?
+
+    is_independant_group = ['Practitioner', 'PractitionerRole', 'Location', 'Organization'].include? resource_type
+    basic_search_parameters_text = 'The first search uses the selected patient(s) from the prior launch sequence. Any subsequent searches will look for its parameter values from the results of the first search. For example, the `identifier` search in the patient sequence is performed by looking for an existing `Patient.identifier` from any of the resources returned in the `_id` search. If a value cannot be found this way, the search is skipped.'
+    independant_search_parameters_text = 'Resources for this test group can\'t be found using patient search parameters. This means that in this particular case, the first test will be a read test, not a search. To ensure that this resource will be available for reading, please review the [prerequisites](https://github.com/hl7au/au-fhir-core-inferno/blob/master/docs/pre-requisites.md). Additionally, you can run this test group separately by using specific resource IDs.'
+    search_parameters_text = is_independant_group ? independant_search_parameters_text : basic_search_parameters_text
 
     searching_title = for_group_description ? '## Searching' : '##### Searching'
     search_parameters_title = for_group_description ? '### Search Parameters' : '###### Search Parameters'
@@ -108,12 +128,7 @@ module Helpers
       #{search_param_name_string}
 
       #{search_parameters_title}
-      The first search uses the selected patient(s) from the prior launch
-      sequence. Any subsequent searches will look for its parameter values
-      from the results of the first search. For example, the `identifier`
-      search in the patient sequence is performed by looking for an existing
-      `Patient.identifier` from any of the resources returned in the `_id`
-      search. If a value cannot be found this way, the search is skipped.
+      #{search_parameters_text}
 
       #{search_validation_title}
       Inferno will retrieve up to the first 20 bundle pages of the reply for
@@ -144,5 +159,73 @@ module Helpers
     when Array
       element.each { |item| process_resource_element(item, extensions) }
     end
+  end
+
+  def self.custom_validation_group_title_text
+    'Custom Validation Group'
+  end
+
+  def self.custom_validation_group_description_text
+    %(
+      This test group is designed to validate the conformity of FHIR resources against specified profiles.
+      Leveraging the dynamic capabilities of FHIR, this validation ensures that the resources adhere to the standards and guidelines established within the relevant AU Core.
+    )
+  end
+
+  def self.custom_validation_test_title_text
+    'Custom validation of the resource'
+  end
+
+  def self.custom_validation_test_input_text
+    'FHIR resource in JSON format (custom validation)'
+  end
+
+  def self.custom_validation_test_description_text
+    %(
+      This test automatically identifies and validates any provided FHIR resource.
+      Users are required to input the FHIR resource in JSON format, referred to as 'resource_json'.
+      The test extracts the applicable profile for validation from the first element in the 'meta.profile' array, located at the path: resource.meta.profile.0.
+      This profile serves as the benchmark for the validation process.
+
+      Given the optional nature of this test, its results do not influence the final outcome of the test report.
+    )
+  end
+
+  def self.custom_validation_test_info_resource_type_text(resource_type)
+    "Resource type to validate is #{resource_type}"
+  end
+
+  def self.custom_validation_test_info_profile_text(fhir_resource_profile)
+    "Resource profile to validate is #{fhir_resource_profile}"
+  end
+
+  def self.custom_validation_test_info_ig_text(ig_version)
+    "IG version to validate is #{ig_version}"
+  end
+
+  def self.default_patient_ids_string
+    'baratz-toni, irvine-ronny-lawrence, italia-sofia, howe-deangelo, hayes-arianne, baby-banks-john, banks-mia-leanne'
+  end
+
+  def self.check_for_dar(resource)
+    resource.each_element do |element, _meta, path|
+      next unless element.is_a?(FHIR::Coding)
+
+      return true if (element.code == 'masked' || element.code == 'unknown') && element.system == DAR_CODE_SYSTEM_URL
+    end
+
+    false
+  end
+
+  def self.check_for_dar_extension(resource)
+    return resource.source_contents&.include? DAR_EXTENSION_URL
+  end
+
+  def self.return_uniq_list_resources(resource_list)
+    return resource_list.uniq
+  end
+
+  def self.is_message_exist_in_list(message_list, message)
+    message_list.any? { |list_message| message.include? list_message }
   end
 end
