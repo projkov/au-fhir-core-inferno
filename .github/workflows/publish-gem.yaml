@@ -1,0 +1,27 @@
+name: Publish Gem
+on:
+  push:
+    tags:
+    - '*'
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1.2'
+      - name: Install dependencies
+        run: |
+          gem install bundler
+          bundle install
+      - name: Build the gem
+        run: |
+          gem build au_core_test_kit.gemspec
+      - name: Publish the gem
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gem push --key github --host https://rubygems.pkg.github.com/${{ github.repository_owner }} your_gem-*.gem
